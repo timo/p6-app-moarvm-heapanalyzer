@@ -274,7 +274,8 @@ my class Snapshot {
         }
         my @parts;
 
-        @parts.push: self.describe-col($idx);
+        @parts.push: self.describe-col($idx) ~ "\n\n" ~
+                     "@!col-size[$idx] + @!col-unmanaged-size[$idx] bytes\n";
 
         my int $num-refs = @!col-num-refs[$idx];
         my int $refs-start = @!col-refs-start[$idx];
