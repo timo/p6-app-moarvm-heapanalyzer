@@ -114,15 +114,14 @@ method interactive(IO::Path $file) {
                     say @pieces.join("\n") ~ "\n";
                 }
             }
-            when /^ show \s+ (\d+) \s* $/ {
-                my $idx = $0.Int;
+            when /^ show (\s+ \d+)? \s* $/ {
+                my $idx = ($0 // 0).Int;
                 with-current-snapshot -> $s {
                     my @parts = $s.details($idx);
                     my @pieces;
                     @pieces.push: @parts.shift;
                     for @parts -> $ref, $target {
-                        @pieces.push("    --[ $ref ]-->");
-                        @pieces.push("      $target")
+                        @pieces.push("    --[ $ref ]-->   $target");
                     }
                     say @pieces.join("\n") ~ "\n";
                 }
