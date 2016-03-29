@@ -34,7 +34,9 @@ method interactive(IO::Path $file) {
         }
     }
     say "Type `help` for available commands, or `exit` to exit.\n";
-    
+
+    my &more is default({ say "more of what exactly? (try a top or find command)" });
+
     loop {
         sub with-current-snapshot(&code) {
             without $current-snapshot {
@@ -63,6 +65,7 @@ method interactive(IO::Path $file) {
                 else {
                     say "Snapshot loaded and ready."
                 }
+                &more = Nil;
             }
             when 'summary' {
                 with-current-snapshot -> $s {
@@ -84,11 +87,21 @@ method interactive(IO::Path $file) {
                 my $what = ~$1;
                 my $by = $2 ?? ~$2 !! 'size';
                 with-current-snapshot -> $s {
+                    my $start-at = $n;
                     say table
                         $s."top-by-$by"($n, %kind-map{$what}),
                         $by eq 'count'
                             ?? [ Name => Any, Count => &mag ]
-                            !! [ Name => Any, 'Total Bytes' => &size ]
+                            !! [ Name => Any, 'Total Bytes' => &size ];
+
+                    &more = {
+                        say table
+                            $s."top-by-$by"($n, %kind-map{$what}, :$start-at),
+                            $by eq 'count'
+                                ?? [ Name => Any, Count => &mag ]
+                                !! [ Name => Any, 'Total Bytes' => &size ];
+                        $start-at += $n;
+                    }
                 }
             }
             when /^ find \s+ [(\d+)\s+]? (< objects stables frames >) \s+
@@ -97,9 +110,17 @@ method interactive(IO::Path $file) {
                 my $n = $0 ?? $0.Int !! 15;
                 my ($what, $cond, $value) = ~$1, ~$2, ~$3;
                 with-current-snapshot -> $s {
+                    my $start-at = $n;
                     say table
                         $s.find($n, %kind-map{$what}, $cond, $value),
                         [ 'Object Id' => Any, 'Description' => Any ];
+
+                    &more = {
+                        say table
+                            $s.find($n, %kind-map{$what}, $cond, $value, :$start-at),
+                            [ 'Object Id' => Any, 'Description' => Any ];
+                        $start-at += $n;
+                    };
                 }
             }
             when /^ path \s+ (\d+) \s* $/ {
@@ -113,6 +134,7 @@ method interactive(IO::Path $file) {
                     }
                     say @pieces.join("\n") ~ "\n";
                 }
+                &more = { say "Cannot 'more' a 'path' command" };
             }
             when /^ show (\s+ \d+)? \s* $/ {
                 my $idx = ($0 // 0).Int;
@@ -125,9 +147,14 @@ method interactive(IO::Path $file) {
                     }
                     say @pieces.join("\n") ~ "\n";
                 }
+                &more = { say "Cannot 'more' a 'show' command" };
+            }
+            when 'more' {
+                more();
             }
             when 'help' {
                 say help();
+                &more = { say "Cannot 'more' a 'help' command" };
             }
             when 'exit' {
                 exit 0;

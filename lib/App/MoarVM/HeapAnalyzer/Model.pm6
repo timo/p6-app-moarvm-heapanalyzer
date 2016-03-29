@@ -143,7 +143,7 @@ my class Snapshot {
         @!ref-tos := @ref-tos;
     }
 
-    method top-by-count(int $n, int $kind) {
+    method top-by-count(int $n, int $kind, Int :$start-at = 0) {
         my %top;
         my int $num-cols = @!col-kinds.elems;
         loop (my int $i = 0; $i < $num-cols; $i++) {
@@ -151,10 +151,10 @@ my class Snapshot {
                 %top{@!col-desc-indexes[$i]}++;
             }
         }
-        self!munge-top-results(%top, $n, $kind)
+        self!munge-top-results(%top, $n, $kind, :$start-at)
     }
 
-    method top-by-size(int $n, int $kind) {
+    method top-by-size(int $n, int $kind, Int :$start-at = 0) {
         my %top;
         my int $num-cols = @!col-kinds.elems;
         loop (my int $i = 0; $i < $num-cols; $i++) {
@@ -162,11 +162,17 @@ my class Snapshot {
                 %top{@!col-desc-indexes[$i]} += @!col-size[$i] + @!col-unmanaged-size[$i];
             }
         }
-        self!munge-top-results(%top, $n, $kind)
+        self!munge-top-results(%top, $n, $kind, :$start-at)
     }
     
-    method !munge-top-results(%top, int $n, int $kind) {
-        my @raw-results = %top.sort(-*.value).head($n);
+    method !munge-top-results(%top, int $n, int $kind, :$start-at = 0) {
+        my @raw-results;
+        if $start-at {
+            @raw-results = %top.sort(-*.value).head($n + $start-at).tail($n);
+        }
+        else {
+            @raw-results = %top.sort(-*.value).head($n);
+        }
         if $kind == CollectableKind::Frame {
             @raw-results.map({
                 [$!static-frames.summary(.key.Int), .value]
@@ -179,7 +185,7 @@ my class Snapshot {
         }
     }
 
-    method find(int $n, int $kind, $cond, $value) {
+    method find(int $n, int $kind, $cond, $value, Int :$start-at = 0) {
         my int8 @matching;
         given $cond {
             when 'type' {
@@ -206,10 +212,10 @@ my class Snapshot {
                         ?? $!static-frames.summary(@!col-desc-indexes[$i])
                         !! $!types.type-name(@!col-desc-indexes[$i])
                 ];
-                last if @results == $n;
+                last if @results == $n + $start-at;
             }
         }
-        @results
+        @results.tail($n)
     }
 
     method describe-col($cur-col) {
