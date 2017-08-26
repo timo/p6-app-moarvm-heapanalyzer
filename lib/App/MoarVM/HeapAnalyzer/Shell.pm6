@@ -37,13 +37,38 @@ method interactive(IO::Path $file) {
     
     loop {
         sub with-current-snapshot(&code) {
+            my $reporter-promise = Promise.new;
+            $reporter-promise.keep(1);
+            my $no-need-to-report = Promise.new;
             without $current-snapshot {
                 die "Please select a snapshot to use this instruction (`snapshot <n>`)";
             }
             if $!model.prepare-snapshot($current-snapshot) == SnapshotStatus::Preparing {
                 say "Wait a moment, while I finish loading the snapshot...\n";
+                $reporter-promise = start {
+                    await Promise.anyof($no-need-to-report, Promise.in(10));
+                    my $should-header = 0;
+                    loop {
+                        my @data = $!model.get-progress;
+                        if @data {
+                            say table :show-header($should-header %% 10),
+                                [@data>>.value,],
+                                ["#References" => Any,
+                                 "#Objects" => Any,
+                                 "#Type Objects" => Any,
+                                 "#STables" => Any,
+                                 "#Frames" => Any,
+                                 "Total size" => &size];
+                        }
+                        else { last }
+                        $should-header++;
+                        await Promise.anyof(Promise.in(10), $no-need-to-report);
+                    }
+                }
             }
-            code($!model.get-snapshot($current-snapshot))
+            code($!model.get-snapshot($current-snapshot));
+            $no-need-to-report.keep(1);
+            await $reporter-promise;
         }
 
         my constant %kind-map = hash
@@ -162,7 +187,7 @@ sub mag($n) {
     $n.Str.flip.comb(3).join(',').flip
 }
 
-sub table(@data, @columns) {
+sub table(@data, @columns, :$show-header = True) {
     my @formatters = @columns>>.value;
     my @formatted-data = @data.map(-> @row {
         list @row.pairs.map({
@@ -177,16 +202,18 @@ sub table(@data, @columns) {
         .map({ (flat $@names, @formatted-data)>>.[$_]>>.chars.max });
 
     my @pieces;
-    for ^@columns -> $i {
-        push @pieces, @names[$i];
-        push @pieces, ' ' x 2 + @col-widths[$i] - @names[$i].chars;
+    if $show-header {
+        for ^@columns -> $i {
+            push @pieces, @names[$i];
+            push @pieces, ' ' x 2 + @col-widths[$i] - @names[$i].chars;
+        }
+        push @pieces, "\n";
+        for ^@columns -> $i {
+            push @pieces, '=' x @col-widths[$i];
+            push @pieces, "  ";
+        }
+        push @pieces, "\n";
     }
-    push @pieces, "\n";
-    for ^@columns -> $i {
-        push @pieces, '=' x @col-widths[$i];
-        push @pieces, "  ";
-    }
-    push @pieces, "\n";
     for @formatted-data -> @row {
         for ^@columns -> $i {
             push @pieces, @row[$i];

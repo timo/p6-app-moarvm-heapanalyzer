@@ -5,6 +5,9 @@ has $!strings-promise;
 has $!types-promise;
 has $!static-frames-promise;
 
+has &!grab_collectable_progress;
+has &!grab_references_progress;
+
 # Raw, unparsed, snapshot data.
 has @!unparsed-snapshots;
 
@@ -459,6 +462,10 @@ method get-snapshot($index) {
     )
 }
 
+method get-progress() {
+    flat &!grab_references_progress(), &!grab_collectable_progress()
+}
+
 method !parse-snapshot(%snapshot) {
     my $col-data = start {
         my int8 @col-kinds;
@@ -467,20 +474,27 @@ method !parse-snapshot(%snapshot) {
         my int @col-unmanaged-size;
         my int @col-refs-start;
         my int32 @col-num-refs;
-        my int $num-objects;
-        my int $num-type-objects;
-        my int $num-stables;
-        my int $num-frames;
-        my int $total-size;
+        my atomicint $num-objects;
+        my atomicint $num-type-objects;
+        my atomicint $num-stables;
+        my atomicint $num-frames;
+        my atomicint $total-size;
+        &!grab_collectable_progress = {
+            (num-objects      => ⚛$num-objects,
+             num-type-objects => ⚛$num-type-objects,
+             num-stables      => ⚛$num-stables,
+             num-frames       => ⚛$num-frames,
+             total-size       => ⚛$total-size)
+        };
         for %snapshot<collectables>.split(';') {
             my @pieces := .split(',').List;
             
             my int $kind = @pieces[0].Int;
             @col-kinds.push($kind);
-            if    $kind == 1 { $num-objects++ }
-            elsif $kind == 2 { $num-type-objects++ }
-            elsif $kind == 3 { $num-stables++ }
-            elsif $kind == 4 { $num-frames++ }
+            if    $kind == 1 { $num-objects⚛++ }
+            elsif $kind == 2 { $num-type-objects⚛++ }
+            elsif $kind == 3 { $num-stables⚛++ }
+            elsif $kind == 4 { $num-frames⚛++ }
 
             @col-desc-indexes.push(@pieces[1].Int);
 
@@ -488,7 +502,7 @@ method !parse-snapshot(%snapshot) {
             @col-size.push($size);
             my int $unmanaged-size = @pieces[3].Int;
             @col-unmanaged-size.push($unmanaged-size);
-            $total-size += $size + $unmanaged-size;
+            $total-size ⚛+= $size + $unmanaged-size;
 
             @col-refs-start.push(@pieces[4].Int);
             @col-num-refs.push(@pieces[5].Int);
@@ -504,13 +518,23 @@ method !parse-snapshot(%snapshot) {
         my int8 @ref-kinds;
         my int @ref-indexes;
         my int @ref-tos;
+        my atomicint $refcount;
+        &!grab_references_progress = {
+            (refcount => ⚛$refcount);
+        };
         for %snapshot<references>.split(';') {
             my @pieces := .split(',').List;
             @ref-kinds.push(@pieces[0].Int);
             @ref-indexes.push(@pieces[1].Int);
             @ref-tos.push(@pieces[2].Int);
+            $refcount⚛++;
         }
         hash(:@ref-kinds, :@ref-indexes, :@ref-tos)
+    }
+
+    LEAVE {
+        &!grab_collectable_progress = { Empty }
+        &!grab_references_progress  = { Empty }
     }
 
     Snapshot.new(
