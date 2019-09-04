@@ -3,7 +3,7 @@ use v6.d;
 unit class App::MoarVM::HeapAnalyzer::Parser is export;
 
 #use App::MoarVM::HeapAnalyzer::LogTimelineSchema;
-use Compress::Zstd;
+#use Compress::Zstd;
 
 class TocEntry {
     has Str $.kind;

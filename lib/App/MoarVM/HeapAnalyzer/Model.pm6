@@ -21,42 +21,6 @@ has int $!version;
 
 class Snapshot { ... }
 
-enum Unit is export <Count Bytes CollectableId TypeName FrameName ReprName>;
-
-role Result is export is rw {
-    has Snapshot $.snapshot;
-
-    has Range $.estimated-more = 0..Inf;
-    has &.fetch-more = -> { False };
-    has int $.batch-starts-at = 0;
-}
-
-class ResultTable does Result is export is rw {
-    has Str @.headers;
-    has Unit @.units;
-    has @.values;
-}
-
-class ResultCollectablesDetails is export is rw {
-    has Str @.headers;
-    has Unit @.units;
-    has @.values;
-
-    has @.out-refs;
-    has @.out-targets;
-}
-
-class ResultCollectablesList does Result is export is rw {
-    has Str @.headers;
-    has Unit @.units;
-    has @.values;
-}
-
-class ResultPath does Result is export is rw {
-    has Hash @.collectables;
-    has Hash @.references;
-}
-
 # Holds and provides access to the types data set.
 my class Types {
     has int @!repr-name-indexes;
@@ -224,357 +188,6 @@ my class Snapshot {
     method num-references() {
         @!ref-kinds.elems
     }
-
-    method top-by-count(int $n, int $kind) {
-        my %top;
-        my int $num-cols = @!col-kinds.elems;
-        loop (my int $i = 0; $i < $num-cols; $i++) {
-            if @!col-kinds[$i] == $kind {
-                %top{@!col-desc-indexes[$i]}++;
-            }
-        }
-        self!munge-top-results(%top, $n, $kind)
-    }
-
-    method top-by-size(int $n, int $kind) {
-        my %top;
-        my int $num-cols = @!col-kinds.elems;
-        loop (my int $i = 0; $i < $num-cols; $i++) {
-            if @!col-kinds[$i] == $kind {
-                %top{@!col-desc-indexes[$i]} += @!col-size[$i] + @!col-unmanaged-size[$i];
-            }
-        }
-        self!munge-top-results(%top, $n, $kind)
-    }
-    
-    method !munge-top-results(%top, int $n, int $kind) {
-        my @raw-results = %top.sort(-*.value).head($n);
-        if $kind == CollectableKind::Frame {
-            @raw-results.map({
-                [$!static-frames.summary(.key.Int), .value]
-            })
-        }
-        else {
-            @raw-results.map({
-                [$!types.type-name(.key.Int), .value]
-            })
-        }
-    }
-
-    method find(int $n, int $kind, $cond, $value) {
-        my int8 @matching;
-        given $cond {
-            when 'type' {
-                @matching[$_] = 1 for $!types.all-with-type($value);
-            }
-            when 'repr' {
-                @matching[$_] = 1 for $!types.all-with-repr($value);
-            }
-            when 'name' {
-                @matching[$_] = 1 for $!static-frames.all-with-name($value);
-            }
-            default {
-                die "Sorry, don't understand search condition $cond";
-            }
-        }
-
-        my $result-obj =
-                ResultCollectablesList.new(
-                    :snapshot(self),
-                    :headers("Object Id", "Description", "Unmanaged Size"),
-                    :units(CollectableId,
-                        $kind == CollectableKind::Frame
-                            ?? FrameName
-                            !! TypeName,
-                        Bytes));
-
-        my int $last-fetched = 0;
-        my int $num-cols = @!col-kinds.elems;
-
-        my &fetch-more = -> $count {
-            my @results := $result-obj.values;
-            $result-obj.batch-starts-at = +@results + 1;
-            my int $targetsize = $count + $result-obj.batch-starts-at;
-            loop (my int $i = $last-fetched;
-                    $i < $num-cols && @results < $targetsize;
-                    $i++) {
-                if @!col-kinds[$i] == $kind && @matching[@!col-desc-indexes[$i]] {
-                    @results.push: [
-                        $i,
-                        $kind == CollectableKind::Frame
-                            ?? $!static-frames.summary(@!col-desc-indexes[$i])
-                            !! $!types.type-name(@!col-desc-indexes[$i]),
-                        @!col-size[$i] + @!col-unmanaged-size[$i]
-                    ];
-                }
-            }
-            $result-obj.estimated-more = 0 .. ($num-cols - $i);
-            $last-fetched = $i;
-        }
-        fetch-more($n);
-        $result-obj.fetch-more = &fetch-more;
-        $result-obj;
-    }
-
-    method describe-col($cur-col) {
-        unless $cur-col ~~ ^@!col-kinds.elems {
-            die "No such collectable index $cur-col";
-        }
-        given @!col-kinds[$cur-col] {
-            when Object {
-                $!types.type-name(@!col-desc-indexes[$cur-col]) ~ ' (Object)'
-            }
-            when TypeObject {
-                $!types.type-name(@!col-desc-indexes[$cur-col]) ~ ' (Type Object)'
-            }
-            when STable {
-                $!types.type-name(@!col-desc-indexes[$cur-col]) ~ ' (STable)'
-            }
-            when Frame {
-                $!static-frames.summary(@!col-desc-indexes[$cur-col]) ~ ' (Frame)'
-            }
-            when PermRoots { 'Permanent roots' }
-            when InstanceRoots { 'VM Instance Roots' }
-            when CStackRoots { 'C Stack Roots' }
-            when ThreadRoots { 'Thread Roots' }
-            when Root { 'Root' }
-            when InterGenerationalRoots { 'Inter-generational Roots' }
-            when CallStackRoots { 'Call Stack Roots' }
-            default { '???' }
-        }
-    }
-
-    method path($idx) {
-        unless $idx ~~ ^@!col-kinds.elems {
-            die "No such collectable index $idx";
-        }
-        self!ensure-bfs();
-
-        my @path;
-        my int $cur-col = $idx;
-        until $cur-col == -1 {
-            @path.unshift: self.describe-col($cur-col) ~ " ($cur-col)";
-
-            my int $pred-ref = @!bfs-pred-refs[$cur-col];
-            if $pred-ref >= 0 {
-                @path.unshift: do given @!ref-kinds[$pred-ref] {
-                    when String {
-                        @!strings[@!ref-indexes[$pred-ref]]
-                    }
-                    when Index {
-                        "Index @!ref-indexes[$pred-ref]"
-                    }
-                    default { 'Unknown' }
-                }
-            }
-
-            $cur-col = @!bfs-preds[$cur-col];
-        }
-
-        @path
-    }
-
-    method details($idx) {
-        unless $idx ~~ ^@!col-kinds.elems {
-            die "No such collectable index $idx";
-        }
-        my @parts;
-
-        @parts.push: self.describe-col($idx);
-
-        my int $num-refs = @!col-num-refs[$idx];
-        my int $refs-start = @!col-refs-start[$idx];
-        loop (my int $i = 0; $i < $num-refs; $i++) {
-            my int $ref-idx = $refs-start + $i;
-            my int $to = @!ref-tos[$ref-idx];
-
-            @parts.push: do given @!ref-kinds[$ref-idx] {
-                when String {
-                    @!strings[@!ref-indexes[$ref-idx]]
-                }
-                when Index {
-                    "Index @!ref-indexes[$ref-idx]"
-                }
-                default { 'Unknown' }
-            }
-            @parts.push: self.describe-col($to) ~ " ($to)";
-        }
-        @parts;
-    }
-
-    method reverse-refs($idx) {
-        self!ensure-incidents();
-
-        say (0..^@!col-num-revrefs[$idx]) + @!col-revrefs-start[$idx];
-
-        do for (0..^@!col-num-revrefs[$idx]) + @!col-revrefs-start[$idx] -> $r {
-            my int $source = @!revrefs-tos[$r];
-            self.describe-col($source) ~ " ($source)";
-        }
-    }
-
-    method !ensure-bfs() {
-        return if @!bfs-distances;
-
-        my int32 @distances;
-        my int @pred;
-        my int @pred-ref;
-        my int8 @color; # 0 = white, 1 = grey, 2 = black
-
-        my int @delayed-string-refs;
-
-        my Str @strings-to-slow-down = (
-            "Inter-generational Roots",
-            "Strings heap entry",
-            "Boxed integer cache entry",
-        );
-
-        for @strings-to-slow-down {
-            with @!strings.first($_, :k) {
-                say @!strings[$_];
-                @delayed-string-refs.push($_);
-            }
-        }
-
-        #say @delayed-string-refs;
-
-        @color[0] = 1;
-        @distances[0] = 0;
-        @pred[0] = -1;
-        @pred-ref[0] = -1;
-
-        my int @queue;
-        my int @delayed-refs-queue;
-        @queue.push(0);
-        repeat {
-            while @queue {
-                my $cur-col = @queue.shift;
-                my $num-refs = @!col-num-refs[$cur-col];
-                my $refs-start = @!col-refs-start[$cur-col];
-                my $refs-end = $refs-start + $num-refs;
-                loop (my int $i = $refs-start; $i < $refs-end; $i++) {
-                    my $ref-idx = $i;
-                    my $to = @!ref-tos[$ref-idx];
-                    my $ref-index = @!ref-indexes[$ref-idx];
-                    if @color[$to] == 0 {
-                        if @!ref-kinds[$ref-idx] == 2 && (
-                                   $ref-index == @delayed-string-refs[0]
-                                || $ref-index == @delayed-string-refs[1]
-                                || $ref-index == @delayed-string-refs[2]
-                            ) {
-                            @delayed-refs-queue.push($cur-col);
-                            @delayed-refs-queue.push($ref-idx);
-                            @delayed-refs-queue.push($to);
-                        }
-                        else {
-                            @color[$to] = 1;
-                            @distances[$to] = @distances[$cur-col] + 1;
-                            @pred[$to] = $cur-col;
-                            @pred-ref[$to] = $ref-idx;
-                            @queue.push($to);
-                        }
-                    }
-                }
-                @color[$cur-col] = 2;
-            }
-            if @delayed-refs-queue {
-                repeat {
-                    my  $cur-col = @delayed-refs-queue.shift;
-                    my  $ref-idx = @delayed-refs-queue.shift;
-                    my  $to =      @delayed-refs-queue.shift;
-
-                    if @color[$to] == 0 {
-                        @color[$to] = 1;
-                        @distances[$to] = @distances[$cur-col] + 1;
-                        @pred[$to] = $cur-col;
-                        @pred-ref[$to] = $ref-idx;
-                        @queue.push($to);
-                    }
-                } until @queue || !@delayed-refs-queue;
-            }
-        } until !@delayed-refs-queue && !@queue;
-
-        @!bfs-distances := @distances;
-        @!bfs-preds := @pred;
-        @!bfs-pred-refs := @pred-ref;
-    }
-
-    method !ensure-incidents() {
-        return if @!revrefs-tos;
-        
-        my num $start = now.Num;
-
-        my int $num-coll = +@!col-kinds;
-        my int $num-refs = +@!ref-tos;
-        note "got $num-coll collectables to go through";
-
-        my int @incoming-count;
-
-        @incoming-count[$num-coll - 1] = 0;
-
-        note "going through cols once { now - $start }";
-        loop (my int $r = 0; $r < $num-refs; $r++) {
-            @incoming-count[@!ref-tos[$r]]++;
-        }
-
-        my int $prefixsum;
-
-        note "going through cols twice { now - $start }";
-        loop (my int $c = 0; $c < $num-coll; $c++) {
-            my int $count = @incoming-count[$c];
-            @!col-revrefs-start[$c] = $prefixsum;
-            @!col-num-revrefs[$c] = $count;
-            $prefixsum += $count;
-        }
-
-        my int64 @cursors;
-        @cursors[$num-coll - 1] = 0;
-
-        note "going through cols three times { now - $start }";
-        loop ($c = 0; $c < $num-coll; $c++) {
-            my int $start = @!col-refs-start[$c];
-            my int $last-ref = $start + @!col-num-refs[$c];
-            loop (my int $r = $start; $r < $last-ref; $r++) {
-                my int $to = nqp::atpos_i(@!ref-tos, $r);
-                my int $targetpos = nqp::atpos_i(@!col-revrefs-start, $to) + nqp::atpos_i(@cursors, $to);
-                @cursors.AT-POS($to)++;
-                nqp::bindpos_i(@!revrefs-tos, $targetpos, $c);
-            }
-        }
-        
-        note "done { now - $start }";
-    }
-}
-
-my class MyLittleBuffer {
-    has $!buffer = Buf.new();
-    has $.fh;
-
-    method gimme(int $size) {
-        if nqp::elems(nqp::decont($!buffer)) > $size {
-            $!buffer;
-        } else {
-            $!buffer.splice(nqp::elems(nqp::decont($!buffer)), 0, $!fh.read(4096));
-            $!buffer;
-        }
-    }
-
-    method seek(|c) {
-        $!fh.seek(|c);
-        $!buffer = Buf.new();
-    }
-
-    method exactly(int $size) {
-        self.gimme($size);
-        Buf.new($!buffer.splice(0, $size));
-    }
-    method tell {
-        $!fh.tell - nqp::elems(nqp::decont($!buffer))
-    }
-    method close() {
-        $.fh.close;
-        $!buffer = Buf.new;
-    }
 }
 
 my int8 @empty-buf;
@@ -641,132 +254,30 @@ submethod BUILD(IO::Path :$file = die "Must construct model with a file") {
     my @snapshots;
     my $cur-snapshot-hash;
 
-    $!version = 1;
+    $!version = 3;
 
-    try {
-        my $fh = $file.open(:r, :enc<latin1>);
-        given $fh.readchars(16) {
-            when "MoarHeapDumpv002" {
-                $!version = 2;
-            }
-            when "MoarHeapDumpv003" {
-                $!version = 3;
-            }
-        }
-        LEAVE $fh.close;
-        CATCH { .say }
-    }
+    use App::MoarVM::HeapAnalyzer::Parser;
 
-    if $!version == 1 {
-        for $file.lines.kv -> $lineno, $_ {
-            # Empty or comment
-            when /^ \s* ['#' .*]? $/ {
-                next;
-            }
+    my App::MoarVM::HeapAnalyzer::Parser $parser .= new($file);
 
-            # Data item
-            when /^ (\w+) ':' \s*/ {
-                my $key = ~$0;
-                my $value = .substr($/.chars);
-                with $cur-snapshot-hash {
-                    .{$key} = $value;
-                }
-                else {
-                    %top-level{$key} = $value;
-                }
-            }
+    my %results := $parser.find-outer-toc;
 
-            # Snapshot heading
-            when /^ snapshot \s+ \d+ \s* $/ {
-                push @snapshots, $cur-snapshot-hash := {};
-            }
-
-            # Confused
-            default {
-                die "Confused by heap snapshot line {$lineno + 1}";
-            }
-        }
-
-        # Sanity check.
-        sub want-key(%hash, $key, $where = "in the snapshot file header") {
-            unless %hash{$key}:exists {
-                die "Seems there's a missing $key entry $where"
-            }
-        }
-        want-key(%top-level, 'strings');
-        want-key(%top-level, 'types');
-        want-key(%top-level, 'static_frames');
-        for @snapshots.kv -> $idx, %snapshot {
-            want-key(%snapshot, 'collectables', "in snapshot $idx");
-            want-key(%snapshot, 'references', "in snapshot $idx");
-        }
-
-        # Set off background parsing of the headers, and stash unparsed snapshots.
-        $!strings-promise = start from-json(%top-level<strings>).list;
-        $!types-promise = start self!parse-types(%top-level<types>);
-        $!static-frames-promise = start self!parse-static-frames(%top-level<static_frames>);
-        @!unparsed-snapshots = @snapshots;
-    }
-    elsif $!version == 2 {
-        my $fh = MyLittleBuffer.new(fh => $file.open(:r, :bin));
-        constant index-entries = 4;
-        constant per-snapshot-entries = 4;
-        $fh.seek(-8 * index-entries, SeekFromEnd);
-        my @sizes = readSizedInt64($fh.gimme(8)) xx index-entries;
-        my ($stringheap_size, $types_size, $staticframe_size, $snapshot_entry_count) = @sizes;
-        @sizes.pop; # remove the number of snapshot entries
-
-        sub fh-at($pos) {
-            my $fh = MyLittleBuffer.new(fh => $file.open(:r, :bin, :buffer(4096)));
-            $fh.seek($pos, SeekFromBeginning);
-            $fh
-        }
-
-        $fh.seek(-8 * index-entries - (8 * per-snapshot-entries) * $snapshot_entry_count, SeekFromEnd);
-        my $snapshot-position = 16;
-        @!unparsed-snapshots = do for ^$snapshot_entry_count -> $index {
-            my @buf := $fh.gimme(per-snapshot-entries * 8);
-            my @sizes = readSizedInt64(@buf), readSizedInt64(@buf), readSizedInt64(@buf), readSizedInt64(@buf);
-            my $collpos = $snapshot-position;
-            my $refspos = $collpos + @sizes[0];
-            my $halfrefpos = $refspos + @sizes[2];
-            my $incrementalpos = $refspos + @sizes[1];
-            $snapshot-position += @sizes[0] + @sizes[1] + @sizes[3];
-            {:$collpos, :$halfrefpos, :$refspos, :$incrementalpos, :$file, :$index};
-        }
-
-        my @positions = [\+] $snapshot-position, $stringheap_size, $types_size, $staticframe_size;
-        my @fds = @positions.map(&fh-at);
-        my ($stringheap_fd, $types_fd, $staticframe_fd, $snapshots_fd) = @fds;
-
-        $!strings-promise       = start self!parse-strings-ver2($stringheap_fd);
-        $!types-promise         = start self!parse-types-ver2($types_fd);
-        $!static-frames-promise = start self!parse-static-frames-ver2($staticframe_fd);
-    }
-    elsif $!version == 3 {
-        use App::MoarVM::HeapAnalyzer::Parser;
-
-        my App::MoarVM::HeapAnalyzer::Parser $parser .= new($file);
-
-        my %results := $parser.find-outer-toc;
-
-        $!strings-promise = %results<strings-promise>;
-        $!static-frames-promise = %results<static-frames-promise>.then({ given .result {
-            StaticFrames.new(name-indexes => .<sfname>,
-                    cuid-indexes => .<sfcuid>,
-                    lines => .<sfline>,
-                    file-indexes => .<sffile>,
-                    strings => await $!strings-promise);
-        }});
-        $!types-promise = %results<types-promise>.then({ given .result {
-            Types.new(repr-name-indexes => .<reprname>,
-                      type-name-indexes => .<typename>,
-                      strings => await $!strings-promise)
-        }});
-        @!unparsed-snapshots = do for %results<snapshots>.list.pairs {
-            #say "unparsed snapshot: $_.key(): $_.value.perl()";
-            %(:$parser, toc => .value, index => .key)
-        }
+    $!strings-promise = %results<strings-promise>;
+    $!static-frames-promise = %results<static-frames-promise>.then({ given .result {
+        StaticFrames.new(name-indexes => .<sfname>,
+                cuid-indexes => .<sfcuid>,
+                lines => .<sfline>,
+                file-indexes => .<sffile>,
+                strings => await $!strings-promise);
+    }});
+    $!types-promise = %results<types-promise>.then({ given .result {
+        Types.new(repr-name-indexes => .<reprname>,
+                  type-name-indexes => .<typename>,
+                  strings => await $!strings-promise)
+    }});
+    @!unparsed-snapshots = do for %results<snapshots>.list.pairs {
+        #say "unparsed snapshot: $_.key(): $_.value.perl()";
+        %(:$parser, toc => .value, index => .key)
     }
 }
 
@@ -857,56 +368,6 @@ method !parse-static-frames($sf-str) {
     )
 }
 
-method num-snapshots() {
-    @!unparsed-snapshots.elems
-}
-
-enum SnapshotStatus is export <Preparing Ready Unprepared>;
-
-method prepare-snapshot($index, :$updates) {
-    with @!snapshot-promises[$index] -> $prom {
-        if $updates {
-            note "prepare-snapshot called with updates, but promise already exists";
-            $updates.done();
-        }
-        given $prom.status {
-            when Kept { Ready }
-            when Broken { await $prom }
-            default { Preparing }
-        }
-    }
-    else {
-        with @!unparsed-snapshots[$index] {
-            note "---- ---- ----";
-            note "prepare-snapshot called with ...updates? { so $updates }";
-            note $_.perl;
-            note "---- ---- ----";
-            @!snapshot-promises[$index] = start self!parse-snapshot($_, :$updates);
-            if $updates {
-                $updates.emit({ index => $index, is-done => False }) if $updates;
-            }
-            Preparing
-        }
-        else {
-            note "error: no such snapshot: $index";
-            die "No such snapshot $index"
-        }
-    }
-}
-
-method snapshot-state($index) {
-    with @!snapshot-promises[$index] -> $prom {
-        given $prom.status {
-            when Kept { Ready }
-            when Broken { await $prom }
-            default { Preparing }
-        }
-    }
-    else {
-        Unprepared
-    }
-}
-
 method promise-snapshot($index, :$updates) {
     # XXX index checks
     die "no snapshot with index $index exists" unless @!unparsed-snapshots[$index]:exists;
@@ -935,18 +396,16 @@ method forget-snapshot($index) {
 }
 
 method !parse-snapshot($snapshot-task, :$updates) {
-    my Concurrent::Progress $progress .= new(:1target, :!auto-done) if $updates;
+    my Concurrent::Progress $progress .= new(:1target, :!auto-done);
 
     LEAVE { note "leave parse-snapshot; increment"; .increment with $progress }
 
-    if $updates {
-        start react whenever $progress {
-            $updates.emit:
-                %( snapshot_index => $snapshot-task<index>,
-                   progress => [ .value, .target, .percent ]
-               );
-           say "progress: $_.value.fmt("%3d") / $_.target.fmt("%3d") - $_.percent()%";
-        }
+    start react whenever $progress {
+        $updates.emit:
+            %( snapshot_index => $snapshot-task<index>,
+               progress => [ .value, .target, .percent ]
+           );
+       say "progress: $_.value.fmt("%3d") / $_.target.fmt("%3d") - $_.percent()%";
     }
 
     my $col-data = start {
@@ -1004,15 +463,10 @@ method !parse-snapshot($snapshot-task, :$updates) {
         hash(:@ref-kinds, :@ref-indexes, :@ref-tos)
     }
 
-    #Promise.allof($col-data, $ref-data, $!strings-promise, $!types-promise, $!static-frames-promise).then({ note "update done!"; $updates.done });
-
-    with $progress {
-        note "add 5 targets for promises at end of parse-snapshot";
-        .add-target(5);
-        for $!strings-promise, $!types-promise, $!static-frames-promise, $col-data, $ref-data {
-            .then({ note "one of the promises at the end of parse-snapshot; increment"; $progress.increment })
-        }
-
+    note "add 5 targets for promises at end of parse-snapshot";
+    .add-target(5) with $progress;
+    for $!strings-promise, $!types-promise, $!static-frames-promise, $col-data, $ref-data {
+        .then({ note "one of the promises at the end of parse-snapshot; increment"; $progress.increment })
     }
 
     Snapshot.new(
