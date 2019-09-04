@@ -401,10 +401,10 @@ method !parse-snapshot($snapshot-task, :$updates) {
     LEAVE { note "leave parse-snapshot; increment"; .increment with $progress }
 
     start react whenever $progress {
-        $updates.emit:
-            %( snapshot_index => $snapshot-task<index>,
-               progress => [ .value, .target, .percent ]
-           );
+        #$updates.emit:
+            #%( snapshot_index => $snapshot-task<index>,
+               #progress => [ .value, .target, .percent ]
+           #);
        say "progress: $_.value.fmt("%3d") / $_.target.fmt("%3d") - $_.percent()%";
     }
 
