@@ -964,6 +964,7 @@ method !parse-snapshot($snapshot-task, :$updates) {
 
 
         if $!version == 1 {
+            #`<<<
             my Channel $data .= new;
             my $split-collectables-task = start {
                 $snapshot-task<collectables>.split(";").map({
@@ -992,8 +993,10 @@ method !parse-snapshot($snapshot-task, :$updates) {
                 nqp::push_i(@col-refs-start, nqp::shift_i(@pieces));
                 nqp::push_i(@col-num-refs, nqp::shift_i(@pieces));
             }
+            >>>
         }
         elsif $!version == 2 {
+            #`<<<
             my $fh := MyLittleBuffer.new(fh => $snapshot-task<file>.open(:r, :bin, :buffer(4096)));
             $fh.seek($snapshot-task<collpos>, SeekFromBeginning);
             expect-header($fh, "collectables");
@@ -1092,6 +1095,7 @@ method !parse-snapshot($snapshot-task, :$updates) {
                 $empty-frames.send(@pieces);
             }
             $done = 1;
+            >>>
         }
         elsif $!version == 3 {
             await Promise.in(0.1);
@@ -1122,14 +1126,17 @@ method !parse-snapshot($snapshot-task, :$updates) {
         my int32 @ref-tos;
 
         if $!version == 1 {
+            #`<<<
             for $snapshot-task<references>.split(";") {
                 my int @pieces = .split(",").map(*.Int);
                 @ref-kinds.push(@pieces.shift);
                 @ref-indexes.push(@pieces.shift);
                 @ref-tos.push(@pieces.shift);
             }
+            >>>
         }
         elsif $!version == 2 {
+            #`<<<
             sub grab_n_refs_starting_at($n, $pos, \ref-kinds, \ref-indexes, \ref-tos) {
                 my $fh := MyLittleBuffer.new(fh => $snapshot-task<file>.open(:r, :bin, :buffer(4096)));
                 $fh.seek($pos, SeekFromBeginning);
@@ -1202,6 +1209,7 @@ method !parse-snapshot($snapshot-task, :$updates) {
                   start { @ref-indexes.append(@ref-indexes-second); },
                   start { @ref-tos.append(@ref-tos-second); };
             $updates.emit({ index => $snapshot-task<index>, reference-progress => 1 }) if $updates;
+            >>>
         }
         elsif $!version == 3 {
             $snapshot-task<parser>.fetch-references-data(
@@ -1216,13 +1224,12 @@ method !parse-snapshot($snapshot-task, :$updates) {
         hash(:@ref-kinds, :@ref-indexes, :@ref-tos)
     }
 
-    Promise.allof($col-data, $ref-data, $!strings-promise, $!types-promise, $!static-frames-promise).then({ $updates.done });
+    #Promise.allof($col-data, $ref-data, $!strings-promise, $!types-promise, $!static-frames-promise).then({ note "update done!"; $updates.done });
 
     with $progress {
         note "add 5 targets for promises at end of parse-snapshot";
         .add-target(5);
         for $!strings-promise, $!types-promise, $!static-frames-promise, $col-data, $ref-data {
-            dd $_, .status, so $_;
             .then({ note "one of the promises at the end of parse-snapshot; increment"; $progress.increment })
         }
 

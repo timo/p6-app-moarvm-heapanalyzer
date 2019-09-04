@@ -103,7 +103,9 @@ method read-staticframes() {
 
     await do for %interesting-kinds.keys -> $kindname {
         #note "asking for a token for $kindname" with $*TOKEN-POOL;
+        #`(((
         .receive with $*TOKEN-POOL;
+        )))
 
         start {
             my @values;
@@ -118,7 +120,9 @@ method read-staticframes() {
             }
 
             %results{$kindname} := @values;
+            #`(((
             LEAVE .send(True) with $*TOKEN-POOL;
+            )))
             #LEAVE note "$kindname LEAVE-ing";
             CATCH { note "$kindname exception: $_" }
         }
@@ -140,14 +144,18 @@ method read-types() {
 
     await do for %interesting-kinds.keys -> $kindname {
         #note "asking for a token for $kindname" with $*TOKEN-POOL;
+        #`(((
         .receive with $*TOKEN-POOL;
+        )))
         start {
-            my \if = &.fh-factory.();
             my int @values;
+            my \if = &.fh-factory.();
             my Zstd::InBuffer $input-buffer .= new;
             my Zstd::OutBuffer $output-buffer .= new;
             for %tocs-per-kind{$kindname}.pairs -> $p {
-                self!read-attribute-stream($kindname, $p.value, if => if, :@values, :$input-buffer, :$output-buffer);
+                self!read-attribute-stream($kindname, $p.value, if => if, :@values
+                    :$input-buffer, :$output-buffer
+                );
             };
             %results{$kindname} := @values;
             LEAVE .send(True) with $*TOKEN-POOL;
@@ -171,6 +179,7 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
         my $entrysize = if.read(2).read-uint16(0);
         my $size = if.read(8).read-uint64(0);
 
+        #`(((
         my Zstd::Decompressor $decomp .= new(
                 |%(:$input-buffer with $input-buffer),
                 |%(:$output-buffer with $output-buffer),
@@ -186,6 +195,7 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
         #say "position after $kindname was read: ", (if.tell - $leftover-length).fmt("%x"), " toc end was ", $toc.end.fmt("%x");
         #my $extraread = $leftovers.subbuf(0, 32);
         #say "extra data after $kindname was read: ", $extraread.decode("utf8-c8");
+        )))
 
         without $values {
             if $entrysize == 2 {
@@ -202,6 +212,7 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
             }
         }
 
+        #`((((
         my $original-size = $values.elems;
 
         $values[$original-size + $result.elems div $entrysize] = 0;
@@ -234,6 +245,7 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
         }
 
         #note "splitting apart $kindname took $( my $split-time = now - $start )s; total work time $( my $all-time = now - $realstart ) ({ $split-time * 100 / $all-time }% splitting";
+        ))))
 
         $values<>;
     }
@@ -282,6 +294,7 @@ method fetch-collectable-data(
         my $array = .result;
         my int $index = 0;
         my int $target = $array.elems;
+        #`(((
         while $index < $target {
             my int $val = $array[$index++];
             if $val    == 1 { $num-objects++ }
@@ -289,6 +302,7 @@ method fetch-collectable-data(
             elsif $val == 3 { $num-stables++ }
             elsif $val == 4 { $num-frames++ }
         }
+        )))
         .increment with $progress;
     });
 
@@ -311,7 +325,9 @@ method fetch-collectable-data(
         #note "asking for token for $_.kind()" with $*TOKEN-POOL;
         note "increment target for $_.kind()";
         .increment-target with $progress;
+        #`(((
         .receive with $*TOKEN-POOL;
+        )))
         start {
             my $kindname = $_.kind;
             my $values := %kinds-to-arrays{.kind};
@@ -352,16 +368,20 @@ method fetch-references-data(
             note "increment target for refdescr";
             .increment-target with $progress;
             my $thetoc = @interesting.first(*.kind eq "refdescr");
+            #`(((
             #note "asking for token to read reftrget" with $*TOKEN-POOL;
             .receive with $*TOKEN-POOL;
+            )))
             my $kindname = "refdescr";
             #note "beginning kind refdescr";
             my $data = self!read-attribute-stream("refdescr", $thetoc);
             #note "reading ref descrs into kinds and indexes";
+            #`(((
             for $data.list -> uint64 $_ {
                 @ref-kinds.push: $_ +& 0b11;
                 @ref-indexes.push: $_ +> 2;
             }
+            )))
             #note "done reading ref descrs";
             LEAVE { .send(True) with $*TOKEN-POOL; note "refdescr finished; increment"; .increment with $progress }
             #LEAVE note "$kindname LEAVE-ing";
@@ -370,12 +390,14 @@ method fetch-references-data(
         start {
             note "increment target for reftrget";
             .increment-target with $progress;
-            my $thetoc = @interesting.first(*.kind eq "reftrget");
             my $kindname = "reftrget";
+            my $thetoc = @interesting.first(*.kind eq "reftrget");
 
+            #`(((
             #note "asking for token to read reftrget" with $*TOKEN-POOL;
             .receive with $*TOKEN-POOL;
             #note "beginning kind reftrget";
+            )))
             self!read-attribute-stream("reftrget", $thetoc, values => @ref-tos);
             #note "finished kind reftrget";
             LEAVE { .send(True) with $*TOKEN-POOL; note "reftrgt finished; increment"; .increment with $progress }
