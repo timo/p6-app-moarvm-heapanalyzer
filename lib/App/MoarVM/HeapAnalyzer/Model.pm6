@@ -398,8 +398,6 @@ method forget-snapshot($index) {
 method !parse-snapshot($snapshot-task, :$updates) {
     my Concurrent::Progress $progress .= new(:1target, :!auto-done);
 
-    LEAVE { note "leave parse-snapshot; increment"; .increment with $progress }
-
     start react whenever $progress {
         #$updates.emit:
             #%( snapshot_index => $snapshot-task<index>,
@@ -466,14 +464,17 @@ method !parse-snapshot($snapshot-task, :$updates) {
     note "add 5 targets for promises at end of parse-snapshot";
     .add-target(5) with $progress;
     for $!strings-promise, $!types-promise, $!static-frames-promise, $col-data, $ref-data {
+        note "one target iterating over";
         .then({ note "one of the promises at the end of parse-snapshot; increment"; $progress.increment })
     }
 
-    Snapshot.new(
+    my $result = Snapshot.new(
         |(await $col-data),
         |(await $ref-data),
         strings => await($!strings-promise),
         types => await($!types-promise),
         static-frames => await($!static-frames-promise)
-    )
+    );
+    note "leave parse-snapshot; increment"; .increment with $progress;
+    $result;
 }

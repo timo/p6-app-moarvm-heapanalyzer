@@ -207,7 +207,7 @@ method fetch-collectable-data(
             if    .kind eq "colkind" { $kinds-promise.keep($values) }
             elsif .kind eq "colsize" { $colsize-promise.keep($values) }
             elsif .kind eq "colusize" { $colusize-promise.keep($values) }
-            LEAVE { .increment with $progress }
+            .increment with $progress;
             CATCH { note "$kindname exception: $_" }
         }
     }
@@ -235,7 +235,7 @@ method fetch-references-data(
             my $thetoc = @interesting.first(*.kind eq "refdescr");
             my $kindname = "refdescr";
             my $data = self!read-attribute-stream("refdescr", $thetoc);
-            LEAVE { .increment with $progress }
+            .increment with $progress;
             CATCH { note "$kindname exception: $_" }
         },
         start {
@@ -245,7 +245,7 @@ method fetch-references-data(
             my $kindname = "reftrget";
 
             self!read-attribute-stream("reftrget", $thetoc, values => @ref-tos);
-            LEAVE { .increment with $progress }
+            .increment with $progress;
             CATCH { note "$kindname exception: $_" }
         };
 }
