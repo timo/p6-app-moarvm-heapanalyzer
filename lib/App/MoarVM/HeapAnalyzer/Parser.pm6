@@ -2,7 +2,7 @@ use v6.d;
 
 unit class App::MoarVM::HeapAnalyzer::Parser is export;
 
-use App::MoarVM::HeapAnalyzer::LogTimelineSchema;
+#use App::MoarVM::HeapAnalyzer::LogTimelineSchema;
 use Compress::Zstd;
 
 class TocEntry {
@@ -56,37 +56,6 @@ method read-toc-contents(blob8 $toc) {
 }
 
 method read-string-heap() {
-    my \if = &.fh-factory.();
-
-    for @!snapshot-tocs.map({ $_ with .first(*.kind eq "strings") }) {
-
-        if.seek(.position);
-        die "why are these not strings wtf" unless if.read(8).&no-nulls eq "strings";
-        my $size = if.read(8).read-uint64(0);
-        use Compress::Zstd;
-
-        my Zstd::Decompressor $decomp .= new;
-        my buf8 $result;
-
-        while not $decomp.finished-a-frame {
-            my $read = if.read($decomp.suggested-next-size);
-            $result = $decomp.decompress($read);
-        }
-
-        my $leftover-length = (my $leftovers = $decomp.get-leftovers()).elems;
-        #say "position after string heap was read: ", (if.tell - $leftover-length).fmt("%x"), " toc end was ", .end.fmt("%x");
-        #my $extraread = $leftovers.subbuf(0, 32);
-        #say "extra data after string heap was read: ", $extraread.decode("utf8-c8");
-
-        my $strings-pushed = 0;
-        while $result.elems > 0 {
-            my $strlen = $result.read-uint32(0);
-            my $string = $result.subbuf(4, $strlen).decode("utf8");
-            @!stringheap.push: $string;
-            $result.splice(0, 4 + $strlen);
-            $strings-pushed++;
-        }
-    }
     @!stringheap
 }
 
@@ -102,28 +71,16 @@ method read-staticframes() {
     my %results = :sfname, :sfcuid, :sfline, :sffile;
 
     await do for %interesting-kinds.keys -> $kindname {
-        #note "asking for a token for $kindname" with $*TOKEN-POOL;
-        #`(((
-        .receive with $*TOKEN-POOL;
-        )))
-
         start {
             my @values;
             if $kindname eq "sfline" { @values := my int32 @ }
             else { @values := my int @ }
 
-            my \if = &.fh-factory.();
-            my Zstd::InBuffer $input-buffer .= new;
-            my Zstd::OutBuffer $output-buffer .= new;
             for %tocs-per-kind{$kindname}.pairs -> $p {
-                self!read-attribute-stream($kindname, $p.value, if => if, :@values, :$input-buffer, :$output-buffer);
+                self!read-attribute-stream($kindname, $p.value, :@values, :input-buffer, :output-buffer);
             }
 
             %results{$kindname} := @values;
-            #`(((
-            LEAVE .send(True) with $*TOKEN-POOL;
-            )))
-            #LEAVE note "$kindname LEAVE-ing";
             CATCH { note "$kindname exception: $_" }
         }
     }
@@ -144,22 +101,14 @@ method read-types() {
 
     await do for %interesting-kinds.keys -> $kindname {
         #note "asking for a token for $kindname" with $*TOKEN-POOL;
-        #`(((
-        .receive with $*TOKEN-POOL;
-        )))
         start {
             my int @values;
-            my \if = &.fh-factory.();
-            my Zstd::InBuffer $input-buffer .= new;
-            my Zstd::OutBuffer $output-buffer .= new;
             for %tocs-per-kind{$kindname}.pairs -> $p {
-                self!read-attribute-stream($kindname, $p.value, if => if, :@values
-                    :$input-buffer, :$output-buffer
+                self!read-attribute-stream($kindname, $p.value, :@values
+                    :input-buffer, :output-buffer
                 );
             };
             %results{$kindname} := @values;
-            LEAVE .send(True) with $*TOKEN-POOL;
-            #LEAVE note "$kindname LEAVE-ing";
             CATCH { note "$kindname exception: $_" }
         }
     }
@@ -169,7 +118,7 @@ method read-types() {
 
 
 method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-factory.(), :$input-buffer, :$output-buffer) {
-    App::MoarVM::HeapAnalyzer::Log::ParseAttributeStream.log: kind => $kindname, position => $toc.position.fmt("%x"), {
+    #App::MoarVM::HeapAnalyzer::Log::ParseAttributeStream.log: kind => $kindname, position => $toc.position.fmt("%x"), {
         my $realstart = now;
         my \if := $if;
         if.seek($toc.position);
@@ -178,24 +127,6 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
 
         my $entrysize = if.read(2).read-uint16(0);
         my $size = if.read(8).read-uint64(0);
-
-        #`(((
-        my Zstd::Decompressor $decomp .= new(
-                |%(:$input-buffer with $input-buffer),
-                |%(:$output-buffer with $output-buffer),
-                );
-        my buf8 $result;
-
-        while not $decomp.finished-a-frame {
-            my $read = if.read($decomp.suggested-next-size);
-            $result = $decomp.decompress($read);
-        }
-
-        my $leftover-length = (my $leftovers = $decomp.get-leftovers()).elems;
-        #say "position after $kindname was read: ", (if.tell - $leftover-length).fmt("%x"), " toc end was ", $toc.end.fmt("%x");
-        #my $extraread = $leftovers.subbuf(0, 32);
-        #say "extra data after $kindname was read: ", $extraread.decode("utf8-c8");
-        )))
 
         without $values {
             if $entrysize == 2 {
@@ -212,43 +143,8 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
             }
         }
 
-        #`((((
-        my $original-size = $values.elems;
-
-        $values[$original-size + $result.elems div $entrysize] = 0;
-
-        #note $result.elems div $entrysize, " entries for $kindname";
-
-        #say $values.^name, " ", $kindname;
-
-        use nqp;
-        my $start = now;
-        my int $pos = 0;
-        my int $endpos = $result.elems div $entrysize + $pos;
-        if $entrysize == 2 {
-            repeat {
-                nqp::bindpos_i(nqp::decont($values), $pos + $original-size, $result.read-uint16(nqp::mul_i($pos, 2)));
-            } while ($pos++ < $endpos - 1);
-        }
-        elsif $entrysize == 4 {
-            repeat {
-                nqp::bindpos_i(nqp::decont($values), $pos + $original-size, $result.read-uint32(nqp::mul_i($pos, 4)));
-            } while ($pos++ < $endpos - 1);
-        }
-        elsif $entrysize == 8 {
-            repeat {
-                nqp::bindpos_i(nqp::decont($values), $pos + $original-size, $result.read-uint64(nqp::mul_i($pos, 8)));
-            } while ($pos++ < $endpos - 1);
-        }
-        else {
-            note "what size is $entrysize wtf $kindname";
-        }
-
-        #note "splitting apart $kindname took $( my $split-time = now - $start )s; total work time $( my $all-time = now - $realstart ) ({ $split-time * 100 / $all-time }% splitting";
-        ))))
-
         $values<>;
-    }
+    #}
 }
 
 method fetch-collectable-data(
@@ -265,10 +161,6 @@ method fetch-collectable-data(
 
         :$progress
         ) {
-    #note "trying to fetch collectable data for number $index";
-
-    note "fetch collectable data";
-    dd $progress;
 
     my %kinds-to-arrays = %(
             colkind => @col-kinds,
@@ -291,43 +183,21 @@ method fetch-collectable-data(
     note "add 1 target for kind-stats-promise";
     .add-target(1) with $progress;
     my $kind-stats-done = $kinds-promise.then({
-        my $array = .result;
-        my int $index = 0;
-        my int $target = $array.elems;
-        #`(((
-        while $index < $target {
-            my int $val = $array[$index++];
-            if $val    == 1 { $num-objects++ }
-            elsif $val == 2 { $num-type-objects++ }
-            elsif $val == 3 { $num-stables++ }
-            elsif $val == 4 { $num-frames++ }
-        }
-        )))
         .increment with $progress;
     });
 
     note "add 2 targets for colsize stats and colusize stats";
     .add-target(2) with $progress;
     my $colsize-stats-done = $colsize-promise.then({
-        my $array = .result;
-        $stat-total-size = $array.sum;
         .increment with $progress;
     });
 
-
     my $colusize-stats-done = $colusize-promise.then({
-        my $array = .result;
-        $stat-total-usize = $array.sum;
         .increment with $progress;
     });
 
     await do for @interesting.list.sort(-*.length) {
-        #note "asking for token for $_.kind()" with $*TOKEN-POOL;
-        note "increment target for $_.kind()";
         .increment-target with $progress;
-        #`(((
-        .receive with $*TOKEN-POOL;
-        )))
         start {
             my $kindname = $_.kind;
             my $values := %kinds-to-arrays{.kind};
@@ -337,7 +207,7 @@ method fetch-collectable-data(
             if    .kind eq "colkind" { $kinds-promise.keep($values) }
             elsif .kind eq "colsize" { $colsize-promise.keep($values) }
             elsif .kind eq "colusize" { $colusize-promise.keep($values) }
-            LEAVE { .send(True) with $*TOKEN-POOL; note "leaving $kindname; increment"; .increment with $progress }
+            LEAVE { .increment with $progress }
             CATCH { note "$kindname exception: $_" }
         }
     }
@@ -356,11 +226,6 @@ method fetch-references-data(
 
         :$progress
         ) {
-    #note "trying to fetch references data for number $index";
-
-    note "fetch references data";
-    dd $progress;
-
     my @interesting = $toc.grep(*.kind eq "refdescr" | "reftrget");
 
     await
@@ -368,40 +233,19 @@ method fetch-references-data(
             note "increment target for refdescr";
             .increment-target with $progress;
             my $thetoc = @interesting.first(*.kind eq "refdescr");
-            #`(((
-            #note "asking for token to read reftrget" with $*TOKEN-POOL;
-            .receive with $*TOKEN-POOL;
-            )))
             my $kindname = "refdescr";
-            #note "beginning kind refdescr";
             my $data = self!read-attribute-stream("refdescr", $thetoc);
-            #note "reading ref descrs into kinds and indexes";
-            #`(((
-            for $data.list -> uint64 $_ {
-                @ref-kinds.push: $_ +& 0b11;
-                @ref-indexes.push: $_ +> 2;
-            }
-            )))
-            #note "done reading ref descrs";
-            LEAVE { .send(True) with $*TOKEN-POOL; note "refdescr finished; increment"; .increment with $progress }
-            #LEAVE note "$kindname LEAVE-ing";
+            LEAVE { .increment with $progress }
             CATCH { note "$kindname exception: $_" }
         },
         start {
             note "increment target for reftrget";
             .increment-target with $progress;
-            my $kindname = "reftrget";
             my $thetoc = @interesting.first(*.kind eq "reftrget");
+            my $kindname = "reftrget";
 
-            #`(((
-            #note "asking for token to read reftrget" with $*TOKEN-POOL;
-            .receive with $*TOKEN-POOL;
-            #note "beginning kind reftrget";
-            )))
             self!read-attribute-stream("reftrget", $thetoc, values => @ref-tos);
-            #note "finished kind reftrget";
-            LEAVE { .send(True) with $*TOKEN-POOL; note "reftrgt finished; increment"; .increment with $progress }
-            #LEAVE note "$kindname LEAVE-ing";
+            LEAVE { .increment with $progress }
             CATCH { note "$kindname exception: $_" }
         };
 }
@@ -417,36 +261,37 @@ method find-outer-toc {
 
     die "expected last 8 bytes of file to lead to a toc. alas..." unless no-nulls(if.read(8)) eq "toc";
 
-    App::MoarVM::HeapAnalyzer::Log::ParseTOCs.log: {
+    #App::MoarVM::HeapAnalyzer::Log::ParseTOCs.log: {
         my $entries-to-read = if.read(8).read-uint64(0);
         my $toc = if.read($entries-to-read * 3 * 8);
 
         my @snapshot-tocs = self.read-toc-contents($toc);
 
-        #say "found these snapshots:";
-
         for @snapshot-tocs.head(*-1) {
-            #"----------".say;
-            #.say;
             if.seek(.position);
             die "expected to find a toc here..." unless no-nulls(if.read(8)) eq "toc";
-            App::MoarVM::HeapAnalyzer::Log::ParseTOCFound.log();
+            #App::MoarVM::HeapAnalyzer::Log::ParseTOCFound.log();
             my $size = if.read(8);
             my $innertoc = if.read(.end - .position - 16);
-            #.gist.indent(2).say for my @inner-toc-entries = self.read-toc-contents($innertoc);
             my @inner-toc-entries = self.read-toc-contents($innertoc);
 
             @!snapshot-tocs.push(@inner-toc-entries);
         }
-    }
+    #}
 
-    my $strings-promise = start App::MoarVM::HeapAnalyzer::Log::ParseStrings.log: {
+    my $strings-promise = start 
+    #App::MoarVM::HeapAnalyzer::Log::ParseStrings.log:
+    {
         self.read-string-heap;
     }
-    my $static-frames-promise = start App::MoarVM::HeapAnalyzer::Log::ParseStaticFrames.log: {
+    my $static-frames-promise = start
+    #App::MoarVM::HeapAnalyzer::Log::ParseStaticFrames.log:
+    {
         self.read-staticframes;
     }
-    my $types-promise = start App::MoarVM::HeapAnalyzer::Log::ParseTypes.log: {
+    my $types-promise = start
+    #App::MoarVM::HeapAnalyzer::Log::ParseTypes.log:
+    {
         self.read-types;
     }
 
