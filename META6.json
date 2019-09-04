@@ -5,10 +5,7 @@
     "author": "Jonathan Worthington <jnthn@jnthn.net>",
     "provides": {
         "App::MoarVM::HeapAnalyzer::Model": "lib/App/MoarVM/HeapAnalyzer/Model.pm6",
-        "App::MoarVM::HeapAnalyzer::Shell": "lib/App/MoarVM/HeapAnalyzer/Shell.pm6",
-        "App::MoarVM::HeapAnalyzer::Parser": "lib/App/MoarVM/HeapAnalyzer/Parser.pm6",
-        "App::MoarVM::HeapAnalyzer::LogTimelineSchema": "lib/App/MoarVM/HeapAnalyzer/LogTimelineSchema.pm6",
-        "moar-ha": "bin/moar-ha"
+        "App::MoarVM::HeapAnalyzer::Parser": "lib/App/MoarVM/HeapAnalyzer/Parser.pm6"
     },
     "name": "App::MoarVM::HeapAnalyzer",
     "description": "MoarVM heap snapshot analysis tool",
