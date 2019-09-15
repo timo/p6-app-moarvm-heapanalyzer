@@ -178,8 +178,10 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
                 );
         my buf8 $result;
 
+        my $max-read-size = $toc.end - $toc.position + 128;
+
         while not $decomp.finished-a-frame {
-            my $read = if.read($decomp.suggested-next-size);
+            my $read = if.read($decomp.suggested-next-size min $max-read-size);
             $result = $decomp.decompress($read);
         }
 
