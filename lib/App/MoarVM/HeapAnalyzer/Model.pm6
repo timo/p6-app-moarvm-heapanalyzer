@@ -174,14 +174,14 @@ my enum RefKind is export << :Unknown(0) Index String >>;
 # Holds data about a snapshot and provides various query operations on it.
 my class Snapshot {
     has int8 @!col-kinds;
-    has int32 @!col-desc-indexes;
-    has int16 @!col-size;
-    has int32 @!col-unmanaged-size;
-    has int32 @!col-refs-start;
-    has int32 @!col-num-refs;
+    has uint32 @!col-desc-indexes;
+    has uint16 @!col-size;
+    has uint32 @!col-unmanaged-size;
+    has uint32 @!col-refs-start;
+    has uint32 @!col-num-refs;
 
-    has int @!col-revrefs-start;
-    has int @!col-num-revrefs;
+    has uint @!col-revrefs-start;
+    has uint @!col-num-revrefs;
 
     has @!strings;
     has $!types;
@@ -194,10 +194,10 @@ my class Snapshot {
     has $.total-size;
 
     has int8 @!ref-kinds;
-    has int32 @!ref-indexes;
-    has int32 @!ref-tos;
+    has uint32 @!ref-indexes;
+    has uint32 @!ref-tos;
 
-    has int @!revrefs-tos;
+    has uint @!revrefs-tos;
 
     has @!bfs-distances;
     has @!bfs-preds;
@@ -230,14 +230,14 @@ my class Snapshot {
 
     method forget() {
         @!col-kinds := my int8 @;
-        @!col-desc-indexes = my int32 @;
-        @!col-size = my int16 @;
-        @!col-unmanaged-size = my int32 @;
-        @!col-refs-start = my int32 @;
-        @!col-num-refs = my int16 @;
+        @!col-desc-indexes = my uint32 @;
+        @!col-size = my uint16 @;
+        @!col-unmanaged-size = my uint32 @;
+        @!col-refs-start = my uint32 @;
+        @!col-num-refs = my uint16 @;
         @!ref-kinds = my int8 @;
-        @!ref-indexes = my int32 @;
-        @!ref-tos = my int32 @;
+        @!ref-indexes = my uint32 @;
+        @!ref-tos = my uint32 @;
 
         @!bfs-distances = my int @;
         @!bfs-preds = my int @;
@@ -986,16 +986,16 @@ method !parse-snapshot($snapshot-task, :$updates) {
 
     my $col-data = start {
         my int8 @col-kinds;
-        my int32 @col-desc-indexes;
-        my int16 @col-size;
-        my int32 @col-unmanaged-size;
-        my int32 @col-refs-start;
-        my int32 @col-num-refs;
-        my int $num-objects;
-        my int $num-type-objects;
-        my int $num-stables;
-        my int $num-frames;
-        my int $total-size;
+        my uint32 @col-desc-indexes;
+        my uint16 @col-size;
+        my uint32 @col-unmanaged-size;
+        my uint32 @col-refs-start;
+        my uint32 @col-num-refs;
+        my uint $num-objects;
+        my uint $num-type-objects;
+        my uint $num-stables;
+        my uint $num-frames;
+        my uint $total-size;
 
 
         if $!version == 1 {
@@ -1151,8 +1151,8 @@ method !parse-snapshot($snapshot-task, :$updates) {
 
     my $ref-data = start {
         my int8 @ref-kinds;
-        my int32 @ref-indexes;
-        my int32 @ref-tos;
+        my uint32 @ref-indexes;
+        my uint32 @ref-tos;
 
         if $!version == 1 {
             for $snapshot-task<references>.split(";") {
@@ -1212,9 +1212,9 @@ method !parse-snapshot($snapshot-task, :$updates) {
 
             $updates.emit({ index => $snapshot-task<index>, references-count => $count }) if $updates;
 
-            my int8 @ref-kinds-second;
-            my int32 @ref-indexes-second;
-            my int32 @ref-tos-second;
+            my uint8 @ref-kinds-second;
+            my uint32 @ref-indexes-second;
+            my uint32 @ref-tos-second;
             await start {
                     grab_n_refs_starting_at(
                         $count div 2,
