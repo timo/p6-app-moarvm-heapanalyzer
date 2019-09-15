@@ -205,7 +205,7 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
             }
         }
 
-        my $original-size = $values.elems;
+        my int $original-size = $values.elems;
 
         $values[$original-size + $result.elems div $entrysize] = 0;
 
@@ -215,28 +215,56 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
 
         use nqp;
         my $start = now;
-        my int $pos = 0;
-        my int $endpos = $result.elems div $entrysize + $pos;
         if $entrysize == 2 {
+            my int $pos = 0;
+            my int $endpos = $result.elems div $entrysize + $pos;
+            my $dcvalues := $values<>;
+            my $dcresult := $result<>;
             repeat {
-                nqp::bindpos_i(nqp::decont($values), $pos + $original-size, $result.read-uint16(nqp::mul_i($pos, 2)));
-            } while ($pos++ < $endpos - 1);
+                nqp::bindpos_i(
+                    $dcvalues,
+                    nqp::add_i($pos, $original-size),
+                    nqp::readuint(
+                        $dcresult,
+                        nqp::mul_i($pos, 2),
+                        nqp::const::BINARY_SIZE_16_BIT));
+            } while (nqp::islt_i(++$pos, $endpos));
         }
         elsif $entrysize == 4 {
+            my int $pos = 0;
+            my int $endpos = $result.elems div $entrysize + $pos;
+            my $dcvalues := $values<>;
+            my $dcresult := $result<>;
             repeat {
-                nqp::bindpos_i(nqp::decont($values), $pos + $original-size, $result.read-uint32(nqp::mul_i($pos, 4)));
-            } while ($pos++ < $endpos - 1);
+                nqp::bindpos_i(
+                    $dcvalues,
+                    nqp::add_i($pos, $original-size),
+                    nqp::readuint(
+                        $dcresult,
+                        nqp::mul_i($pos, 4),
+                        nqp::const::BINARY_SIZE_32_BIT));
+            } while (nqp::islt_i(++$pos, $endpos));
         }
         elsif $entrysize == 8 {
+            my int $pos = 0;
+            my int $endpos = $result.elems div $entrysize + $pos;
+            my $dcvalues := $values<>;
+            my $dcresult := $result<>;
             repeat {
-                nqp::bindpos_i(nqp::decont($values), $pos + $original-size, $result.read-uint64(nqp::mul_i($pos, 8)));
-            } while ($pos++ < $endpos - 1);
+                nqp::bindpos_i(
+                    $dcvalues,
+                    nqp::add_i($pos, $original-size),
+                    nqp::readuint(
+                        $dcresult,
+                        nqp::mul_i($pos, 8),
+                        nqp::const::BINARY_SIZE_64_BIT));
+            } while (nqp::islt_i(++$pos, $endpos));
         }
         else {
             note "what size is $entrysize wtf $kindname";
         }
 
-        #note "splitting apart $kindname took $( my $split-time = now - $start )s; total work time $( my $all-time = now - $realstart ) ({ $split-time * 100 / $all-time }% splitting";
+        note "splitting apart $kindname took $( my $split-time = now - $start )s; total work time $( my $all-time = now - $realstart ) ({ $split-time * 100 / $all-time }% splitting";
 
         $values<>;
     }
