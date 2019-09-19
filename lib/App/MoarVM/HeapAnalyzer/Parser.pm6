@@ -5,6 +5,7 @@ unit class App::MoarVM::HeapAnalyzer::Parser is export;
 use App::MoarVM::HeapAnalyzer::LogTimelineSchema;
 use Compress::Zstd;
 use JSON::Fast;
+use nqp;
 
 class TocEntry {
     has Str $.kind;
@@ -342,11 +343,11 @@ method fetch-collectable-data(
 
     .increment-target with $progress;
     my $kind-stats-done = $kinds-promise.then({
-        my $array = .result;
+        my $array := .result<>;
         my int $index = 0;
         my int $target = $array.elems;
         while $index < $target {
-            my int $val = $array[$index++];
+            my int $val = nqp::atpos_i($array, $index++);
             if $val    == 1 { $num-objects++ }
             elsif $val == 2 { $num-type-objects++ }
             elsif $val == 3 { $num-stables++ }
