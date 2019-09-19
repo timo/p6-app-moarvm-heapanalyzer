@@ -72,6 +72,8 @@ my class Types {
         @!strings := @strings;
     }
 
+    method elems { @!type-name-indexes.elems }
+
     method repr-name(int $idx) {
         @!strings[@!repr-name-indexes[$idx]]
     }
@@ -127,6 +129,8 @@ my class StaticFrames {
         @!file-indexes := @file-indexes;
         @!strings := @strings;
     }
+
+    method elems { @!name-indexes.elems }
 
     method summary(int $index) {
         my $name = @!strings[@!name-indexes[$index]] || '<anon>';
@@ -397,6 +401,18 @@ my class Snapshot {
         @path
     }
 
+    method col-details($idx) {
+        %(
+            kind           => @!col-kinds[$idx],
+            description    => self.describe-col($idx),
+            size           => @!col-size[$idx],
+            unmanaged-size => @!col-unmanaged-size[$idx],
+            outgoing-refs  => @!col-num-refs[$idx],
+            index          => $idx,
+            |%( incoming-refs => @!col-num-revrefs[$idx] if @!col-num-revrefs > 0 )
+        )
+    }
+
     method details($idx) {
         unless $idx ~~ ^@!col-kinds.elems {
             die "No such collectable index $idx";
@@ -567,6 +583,14 @@ my class Snapshot {
         
         note "done { now - $start }";
     }
+}
+
+method num-frames {
+    (await $!static-frames-promise).elems;
+}
+
+method num-types {
+    (await $!types-promise).elems;
 }
 
 method resolve-frames(@indices) {
