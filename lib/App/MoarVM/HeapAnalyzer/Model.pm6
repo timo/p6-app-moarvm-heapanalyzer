@@ -470,7 +470,6 @@ my class Snapshot {
 
         for @strings-to-slow-down {
             with @!strings.first($_, :k) {
-                say @!strings[$_];
                 @delayed-string-refs.push($_);
             }
         }
@@ -545,20 +544,17 @@ my class Snapshot {
 
         my int $num-coll = +@!col-kinds;
         my int $num-refs = +@!ref-tos;
-        note "got $num-coll collectables to go through";
 
         my int @incoming-count;
 
         @incoming-count[$num-coll - 1] = 0;
 
-        note "going through cols once { now - $start }";
         loop (my int $r = 0; $r < $num-refs; $r++) {
             @incoming-count[@!ref-tos[$r]]++;
         }
 
         my int $prefixsum;
 
-        note "going through cols twice { now - $start }";
         loop (my int $c = 0; $c < $num-coll; $c++) {
             my int $count = @incoming-count[$c];
             @!col-revrefs-start[$c] = $prefixsum;
@@ -569,7 +565,6 @@ my class Snapshot {
         my int64 @cursors;
         @cursors[$num-coll - 1] = 0;
 
-        note "going through cols three times { now - $start }";
         loop ($c = 0; $c < $num-coll; $c++) {
             my int $start = @!col-refs-start[$c];
             my int $last-ref = $start + @!col-num-refs[$c];
@@ -580,8 +575,6 @@ my class Snapshot {
                 nqp::bindpos_i(@!revrefs-tos, $targetpos, $c);
             }
         }
-        
-        note "done { now - $start }";
     }
 }
 
