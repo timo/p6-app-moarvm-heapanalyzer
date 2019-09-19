@@ -215,7 +215,7 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
         #say $values.^name, " ", $kindname;
 
         use nqp;
-        my $start = now;
+        #my $start = now;
         if $entrysize == 2 {
             my int $pos = 0;
             my int $endpos = $result.elems div $entrysize + $pos;
@@ -265,7 +265,8 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
             note "what size is $entrysize wtf $kindname";
         }
 
-        note "splitting apart $kindname took $( my $split-time = now - $start )s; total work time $( my $all-time = now - $realstart ) ({ $split-time * 100 / $all-time }% splitting";
+        #say nqp::atan2_n(1e0, 1e0);
+        #note "splitting apart $kindname took $( my $split-time = now - $start )s; total work time $( my $all-time = now - $realstart ) ({ $split-time * 100 / $all-time }% splitting";
 
         $values<>;
     }
