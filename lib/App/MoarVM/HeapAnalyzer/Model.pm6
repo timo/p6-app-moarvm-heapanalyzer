@@ -436,7 +436,7 @@ my class Snapshot {
                 }
                 default { 'Unknown' }
             }
-            @parts.push: self.describe-col($to) ~ " ($to)";
+            @parts.push: self.describe-col($to) => $to;
         }
         @parts;
     }

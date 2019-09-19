@@ -173,9 +173,13 @@ method interactive(IO::Path $file) {
                     my @parts = $s.details($idx);
                     my @pieces;
                     @pieces.push: @parts.shift;
+
+                    say "Details of collectable $idx";
+                    say "";
+
                     for @parts -> $ref, $target {
                         @pieces.push("    --[ $ref ]-->");
-                        @pieces.push("      $target")
+                        @pieces.push("      $target.key() ($target.value())")
                     }
                     say @pieces.join("\n") ~ "\n";
                 }
