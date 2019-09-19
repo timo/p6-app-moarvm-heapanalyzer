@@ -187,7 +187,16 @@ method interactive(IO::Path $file) {
             when /^ incidents \s+ (\d+) \s* $/ {
                 my $idx = $0.Int;
                 with-current-snapshot -> $s {
-                    .say for $s.reverse-refs($idx);
+                    my $rev-refs = $s.reverse-refs($idx).squish.cache;
+                    my %categories = $rev-refs.classify(*.value, as => *.key);
+                    my $len = $rev-refs>>.key>>.chars.max;
+                    say "references pointing at $s.describe-col($idx)";
+                    say "";
+                    for %categories.sort({ .value.elems, .value.head }) {
+                        say .key;
+                        .join("   ").indent(4).say for .value>>.fmt("%$($len)d").rotor(8, :partial);
+                        say "";
+                    }
                 }
             }
             when /^ more $/ {
