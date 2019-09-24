@@ -155,6 +155,17 @@ my class StaticFrames {
         @found
     }
 
+    method all-with-file($file) {
+        my int @found;
+        with @!strings.first($file, :k) -> int $goal {
+            my int $num-sf = @!file-indexes.elems;
+            loop (my int $i = 0; $i < $num-sf; $i++) {
+                @found.push($i) if @!file-indexes[$i] == $goal;
+            }
+        }
+        @found
+    }
+
     method resolve-indices(@indices) {
         do for @indices -> $idx {
             {
@@ -299,6 +310,9 @@ my class Snapshot {
             }
             when 'name' {
                 @matching[$_] = 1 for $!static-frames.all-with-name($value);
+            }
+            when 'file' {
+                @matching[$_] = 1 for $!static-frames.all-with-file($value);
             }
             default {
                 die "Sorry, don't understand search condition $cond";
