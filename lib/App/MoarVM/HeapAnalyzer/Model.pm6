@@ -278,12 +278,12 @@ my class Snapshot {
         my @raw-results = %top.sort(-*.value).head($n);
         if $kind == CollectableKind::Frame {
             @raw-results.map({
-                [$!static-frames.summary(.key.Int), .value]
+                [$!static-frames.summary(.key.Int), .value, .key.Int]
             })
         }
         else {
             @raw-results.map({
-                [$!types.type-name(.key.Int), .value]
+                [$!types.type-name(.key.Int), .value, .key.Int]
             })
         }
     }
