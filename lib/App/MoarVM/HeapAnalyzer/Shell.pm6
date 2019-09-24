@@ -162,7 +162,7 @@ method interactive(IO::Path $file) {
                     my @pieces = @path.shift();
                     for @path -> $route, $target {
                         @pieces.push("    --[ $route ]-->");
-                        @pieces.push($target)
+                        @pieces.push("$target.key() ($target.value())")
                     }
                     say @pieces.join("\n") ~ "\n";
                 }
