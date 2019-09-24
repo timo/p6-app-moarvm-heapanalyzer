@@ -458,11 +458,11 @@ my class Snapshot {
     method reverse-refs($idx) {
         self!ensure-incidents();
 
-        say (0..^@!col-num-revrefs[$idx]) + @!col-revrefs-start[$idx];
+        #say (0..^@!col-num-revrefs[$idx]) + @!col-revrefs-start[$idx];
 
         do for (0..^@!col-num-revrefs[$idx]) + @!col-revrefs-start[$idx] -> $r {
             my int $source = @!revrefs-tos[$r];
-            self.describe-col($source) ~ " ($source)";
+            my $the-el = $source => self.describe-col($source)
         }
     }
 
