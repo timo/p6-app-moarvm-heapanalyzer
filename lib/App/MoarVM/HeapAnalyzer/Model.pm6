@@ -314,6 +314,9 @@ my class Snapshot {
             when 'file' {
                 @matching[$_] = 1 for $!static-frames.all-with-file($value);
             }
+            when 'ref' {
+                @matching[$_] = 1 for @!strings.grep($value, :k);
+            }
             default {
                 die "Sorry, don't understand search condition $cond";
             }
@@ -332,26 +335,53 @@ my class Snapshot {
         my int $last-fetched = 0;
         my int $num-cols = @!col-kinds.elems;
 
-        my &fetch-more = -> $count {
-            my @results := $result-obj.values;
-            $result-obj.batch-starts-at = +@results + 1;
-            my int $targetsize = $count + $result-obj.batch-starts-at;
-            loop (my int $i = $last-fetched;
-                    $i < $num-cols && @results < $targetsize;
-                    $i++) {
-                if @!col-kinds[$i] == $kind && @matching[@!col-desc-indexes[$i]] {
-                    @results.push: [
-                        $i,
-                        $kind == CollectableKind::Frame
-                            ?? $!static-frames.summary(@!col-desc-indexes[$i])
-                            !! $!types.type-name(@!col-desc-indexes[$i]),
-                        @!col-size[$i] + @!col-unmanaged-size[$i]
-                    ];
+        my &fetch-more = 
+            $cond eq "ref" ??
+            -> $count {
+                my @results := $result-obj.values;
+                $result-obj.batch-starts-at = +@results + 1;
+                my int $targetsize = $count + $result-obj.batch-starts-at;
+                loop (my int $i = $last-fetched;
+                        $i < $num-cols && @results < $targetsize;
+                        $i++) {
+                    my int $startpoint = @!col-refs-start[$i];
+                    my int $endpoint = @!col-num-refs[$i] + $startpoint;
+                    loop (my int $refidx = $startpoint; $refidx < $endpoint; $refidx++) {
+                        if @!ref-kinds[$refidx] == String && @matching[@!ref-indexes[$refidx]] {
+                            @results.push: [
+                                $i,
+                                $kind == CollectableKind::Frame
+                                    ?? $!static-frames.summary(@!col-desc-indexes[$i])
+                                    !! $!types.type-name(@!col-desc-indexes[$i]),
+                                @!col-size[$i] + @!col-unmanaged-size[$i]
+                            ];
+                            $refidx = $endpoint;
+                        }
+                    }
                 }
-            }
-            $result-obj.estimated-more = 0 .. ($num-cols - $i);
-            $last-fetched = $i;
-        }
+                $result-obj.estimated-more = 0 .. ($num-cols - $i);
+                $last-fetched = $i;
+            } !!
+            -> $count {
+                my @results := $result-obj.values;
+                $result-obj.batch-starts-at = +@results + 1;
+                my int $targetsize = $count + $result-obj.batch-starts-at;
+                loop (my int $i = $last-fetched;
+                        $i < $num-cols && @results < $targetsize;
+                        $i++) {
+                    if @!col-kinds[$i] == $kind && @matching[@!col-desc-indexes[$i]] {
+                        @results.push: [
+                            $i,
+                            $kind == CollectableKind::Frame
+                                ?? $!static-frames.summary(@!col-desc-indexes[$i])
+                                !! $!types.type-name(@!col-desc-indexes[$i]),
+                            @!col-size[$i] + @!col-unmanaged-size[$i]
+                        ];
+                    }
+                }
+                $result-obj.estimated-more = 0 .. ($num-cols - $i);
+                $last-fetched = $i;
+            };
         fetch-more($n);
         $result-obj.fetch-more = &fetch-more;
         $result-obj;
