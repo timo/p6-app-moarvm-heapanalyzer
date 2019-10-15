@@ -417,11 +417,11 @@ my class Snapshot {
         }
     }
 
-    method path($idx) {
+    method path($idx, :$updates) {
         unless $idx ~~ ^@!col-kinds.elems {
             die "No such collectable index $idx";
         }
-        self!ensure-bfs();
+        self!ensure-bfs(:$updates);
 
         my @path;
         my int $cur-col = $idx;
@@ -503,13 +503,16 @@ my class Snapshot {
         }
     }
 
-    method !ensure-bfs() {
+    method !ensure-bfs(:$updates) {
         return if @!bfs-distances;
 
         my int32 @distances;
         my int @pred;
         my int @pred-ref;
         my int8 @color; # 0 = white, 1 = grey, 2 = black
+
+        my int $progress;
+        my $progress-exception;
 
         my int @delayed-string-refs;
 
@@ -532,6 +535,25 @@ my class Snapshot {
         @distances[0] = 0;
         @pred[0] = -1;
         @pred-ref[0] = -1;
+
+        my int32 $target-number = @!col-kinds.elems;
+
+        with $updates {
+            start
+                react whenever Supply.interval(1) {
+                    $updates.emit(
+                        %( snapshot-index => $!snapshot-index,
+                           progress => [ $progress, $target-number, round $progress * 100 / $target-number ]));
+                    with $progress-exception {
+                        die $progress-exception;
+                    }
+                    if $progress == $target-number {
+                        last
+                    }
+                }
+        }
+
+        CATCH { $progress-exception = $_ }
 
         my int @queue;
         my int @delayed-refs-queue;
@@ -566,6 +588,7 @@ my class Snapshot {
                     }
                 }
                 @color[$cur-col] = 2;
+                $progress++;
             }
             if @delayed-refs-queue {
                 repeat {
@@ -583,6 +606,8 @@ my class Snapshot {
                 } until @queue || !@delayed-refs-queue;
             }
         } until !@delayed-refs-queue && !@queue;
+
+        $progress = $target-number;
 
         @!bfs-distances := @distances;
         @!bfs-preds := @pred;
