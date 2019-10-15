@@ -515,6 +515,7 @@ my class Snapshot {
             "Inter-generational Roots",
             "Strings heap entry",
             "Boxed integer cache entry",
+            "Specialization log",
         );
 
         for @strings-to-slow-down {
