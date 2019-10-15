@@ -218,6 +218,8 @@ my class Snapshot {
     has @!bfs-preds;
     has @!bfs-pred-refs;
 
+    has Int $snapshot-index;
+
     submethod BUILD(
         :@col-kinds, :@col-desc-indexes, :@col-size, :@col-unmanaged-size,
         :@col-refs-start, :@col-num-refs, :@strings, :$!types, :$!static-frames,
@@ -1328,6 +1330,7 @@ method !parse-snapshot($snapshot-task, :$updates) {
         |(await $ref-data),
         strings => await($!strings-promise),
         types => await($!types-promise),
-        static-frames => await($!static-frames-promise)
+        static-frames => await($!static-frames-promise),
+        snapshot-index => $snapshot-task<index>,
     )
 }
