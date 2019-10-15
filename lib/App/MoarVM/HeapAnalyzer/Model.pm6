@@ -492,8 +492,8 @@ my class Snapshot {
         @parts;
     }
 
-    method reverse-refs($idx) {
-        self!ensure-incidents();
+    method reverse-refs($idx, :$updates) {
+        self!ensure-incidents(:$updates);
 
         #say (0..^@!col-num-revrefs[$idx]) + @!col-revrefs-start[$idx];
 
@@ -614,42 +614,76 @@ my class Snapshot {
         @!bfs-pred-refs := @pred-ref;
     }
 
-    method !ensure-incidents() {
+    method !ensure-incidents(:$updates) {
         return if @!revrefs-tos;
-        
+
         my num $start = now.Num;
 
         my int $num-coll = +@!col-kinds;
         my int $num-refs = +@!ref-tos;
 
+        # how many refs point at any given collectable?
         my int @incoming-count;
+
+        # count up the reference index start point by summing up
+        # all numbers of incoming references for all collectables
+        # coming before a given one
+        my int $prefixsum = 0;
+
+        my int $ref-index = 0;
+        my int $col-index = 0;
+
+        my $progress-exception;
+
+        CATCH { $progress-exception = $_ }
+
+        with $updates {
+            start react whenever Supply.interval(1) {
+                my int $is-third-stage = ($prefixsum == -1).Int;
+                # weigh last step double, because it's the slowest part
+                my int $done = $ref-index + $col-index + ($is-third-stage * $num-coll * 2);
+                my int $need = $num-refs + $num-coll + $num-coll * 2;
+                $updates.emit(%(
+                    snapshot-index => $!snapshot-index,
+                    progress => [ $done, $need,
+                        round $done * 100 / $need ]
+                    ));
+                with $progress-exception {
+                    die $progress-exception;
+                }
+                if $done >= $need { last }
+            }
+        }
 
         @incoming-count[$num-coll - 1] = 0;
 
-        loop (my int $r = 0; $r < $num-refs; $r++) {
-            @incoming-count[@!ref-tos[$r]]++;
+        loop ($ref-index = 0; $ref-index < $num-refs; $ref-index++) {
+            @incoming-count[@!ref-tos[$ref-index]]++;
         }
 
-        my int $prefixsum;
-
-        loop (my int $c = 0; $c < $num-coll; $c++) {
-            my int $count = @incoming-count[$c];
-            @!col-revrefs-start[$c] = $prefixsum;
-            @!col-num-revrefs[$c] = $count;
+        loop ($col-index = 0; $col-index < $num-coll; $col-index++) {
+            my int $count = @incoming-count[$col-index];
+            @!col-revrefs-start[$col-index] = $prefixsum;
+            @!col-num-revrefs[$col-index] = $count;
             $prefixsum += $count;
         }
 
+        # signal for the update thread that this part is done
+        $prefixsum = -1;
+
+        # for every collectable, record where the next reverse reference would
+        # be written to.
         my int64 @cursors;
         @cursors[$num-coll - 1] = 0;
 
-        loop ($c = 0; $c < $num-coll; $c++) {
-            my int $start = @!col-refs-start[$c];
-            my int $last-ref = $start + @!col-num-refs[$c];
+        loop ($col-index = 0; $col-index < $num-coll; $col-index++) {
+            my int $start = @!col-refs-start[$col-index];
+            my int $last-ref = $start + @!col-num-refs[$col-index];
             loop (my int $r = $start; $r < $last-ref; $r++) {
                 my int $to = nqp::atpos_i(@!ref-tos, $r);
                 my int $targetpos = nqp::atpos_i(@!col-revrefs-start, $to) + nqp::atpos_i(@cursors, $to);
                 @cursors.AT-POS($to)++;
-                nqp::bindpos_i(@!revrefs-tos, $targetpos, $c);
+                nqp::bindpos_i(@!revrefs-tos, $targetpos, $col-index);
             }
         }
     }
