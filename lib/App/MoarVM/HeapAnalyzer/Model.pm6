@@ -455,7 +455,9 @@ my class Snapshot {
             unmanaged-size => @!col-unmanaged-size[$idx],
             outgoing-refs  => @!col-num-refs[$idx],
             index          => $idx,
-            |%( incoming-refs => @!col-num-revrefs[$idx] if @!col-num-revrefs > 0 )
+            |%( incoming-refs => @!col-num-revrefs[$idx] if @!col-num-revrefs > 0 ),
+            |%( distance-from-root => @!bfs-distances[$idx] if @!bfs-distances > 0 ),
+            |%( towards-root => @!bfs-preds[$idx] if @!bfs-preds > 0),
         )
     }
 
@@ -521,6 +523,7 @@ my class Snapshot {
             "Strings heap entry",
             "Boxed integer cache entry",
             "Specialization log",
+            "<SC>",
         );
 
         for @strings-to-slow-down {

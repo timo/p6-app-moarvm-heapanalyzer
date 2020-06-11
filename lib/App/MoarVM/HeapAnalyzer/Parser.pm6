@@ -50,7 +50,7 @@ sub no-nulls($str is copy) {
     if $str ~~ Blob {
         $str = $str.decode("utf8")
     }
-    $str .= chop while $str.ends-with("\0");
+    $str .= chop while $str.contains("\0");
     $str
 }
 
@@ -168,7 +168,9 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
         my \if := $if;
         if.seek($toc.position);
 
-        die "that's not the kind i'm looking for?!" unless if.read(8).&no-nulls eq $kindname;
+        my $gotkind = if.read(8).&no-nulls;
+
+        die "that's not the kind i'm looking for?! $gotkind rather than $kindname" unless $gotkind eq $kindname;
 
         my $entrysize = if.read(2).read-uint16(0);
         my $size = if.read(8).read-uint64(0);
