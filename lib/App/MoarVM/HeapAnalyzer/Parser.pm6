@@ -213,8 +213,9 @@ method !read-attribute-stream($kindname, $toc, :$values is copy, :$if = &.fh-fac
         $values[$original-size + $result.elems div $entrysize] = 0;
 
         #note $result.elems div $entrysize, " entries for $kindname";
-
-        #say $values.^name, " ", $kindname;
+        unless $result {
+            return $values<>
+        }
 
         use nqp;
         #my $start = now;
